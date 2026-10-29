@@ -407,12 +407,13 @@ struct SegmentEditorSheet: View {
             preview.stop()
             return
         }
+        let current = self.segment ?? segment
         Task {
             await preview.preview(
-                text: segment.translatedText,
-                voice: segment.voice,
-                rate: segment.rate,
-                pitch: segment.pitch,
+                text: current.translatedText,
+                voice: current.voice,
+                rate: current.rate,
+                pitch: current.pitch,
                 settings: settings
             )
         }

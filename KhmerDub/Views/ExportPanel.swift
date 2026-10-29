@@ -299,9 +299,18 @@ struct ExportPanel: View {
             }
             ProgressView(value: model.exportProgress)
                 .tint(AppTheme.gold)
-            Text(loc.t("export.working"))
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(AppTheme.textTertiary)
+            HStack {
+                Text(loc.t("export.working"))
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(AppTheme.textTertiary)
+                Spacer()
+                Button {
+                    model.cancelExport()
+                } label: {
+                    Label(loc.t("common.cancel"), systemImage: "stop.circle")
+                }
+                .buttonStyle(CompactButtonStyle(tint: AppTheme.danger))
+            }
         }
         .appCard()
     }
