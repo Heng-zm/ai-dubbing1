@@ -215,6 +215,8 @@ final class TTSService {
     ) async throws -> URL {
         let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanText.isEmpty else { throw TTSError.emptyText }
+
+        // 1. If Azure key is provided, try Azure first
         if voice.isAzure, let configuration = settings.azureConfiguration, AzureSpeechService.isValidRegion(configuration.region) {
             let output = AppFiles.makeTempURL(extension: "mp3")
             let service = AzureSpeechService(configuration: configuration)
@@ -228,10 +230,28 @@ final class TTSService {
                 )
                 return output
             } catch {
-                // If Azure fails, fall back to on-device TTS automatically
+                // If Azure fails, fall through to Edge-TTS / on-device TTS
             }
         }
 
+        // 2. Free Neural Edge-TTS (No Azure key required)
+        if voice.isAzure || voice == .sreymom || voice == .piseth {
+            let edgeVoice = voice.azureName ?? "km-KH-SreymomNeural"
+            let output = AppFiles.makeTempURL(extension: "mp3")
+            do {
+                return try await EdgeTTSService.shared.synthesize(
+                    text: cleanText,
+                    voiceName: edgeVoice,
+                    rate: rate,
+                    pitch: pitch,
+                    outputURL: output
+                )
+            } catch {
+                // If Edge-TTS fails (e.g. offline), fall through to Apple on-device synthesis
+            }
+        }
+
+        // 3. Apple on-device speech synthesis fallback
         let output = AppFiles.makeTempURL(extension: "caf")
         return try await AppleTTSService.render(
             text: cleanText,
@@ -284,21 +304,26 @@ final class SpeechPreviewPlayer: NSObject, ObservableObject, AVSpeechSynthesizer
                     pitch: pitch,
                     outputURL: url
                 )
-                tempURL = url
-                let item = AVPlayerItem(url: url)
-                let avPlayer = AVPlayer(playerItem: item)
-                player = avPlayer
-                endObserver = NotificationCenter.default.addObserver(
-                    forName: .AVPlayerItemDidPlayToEndTime,
-                    object: item,
-                    queue: .main
-                ) { [weak self] _ in
-                    Task { @MainActor in
-                        self?.isPlaying = false
-                    }
-                }
-                isPlaying = true
-                avPlayer.play()
+                playAudio(url: url)
+                return
+            } catch {
+                // Fall through to Edge-TTS / on-device speech below
+            }
+        }
+
+        // Free Edge-TTS preview
+        if voice.isAzure || voice == .sreymom || voice == .piseth {
+            do {
+                let url = AppFiles.makeTempURL(extension: "mp3")
+                let edgeVoice = voice.azureName ?? "km-KH-SreymomNeural"
+                _ = try await EdgeTTSService.shared.synthesize(
+                    text: cleanText,
+                    voiceName: edgeVoice,
+                    rate: rate,
+                    pitch: pitch,
+                    outputURL: url
+                )
+                playAudio(url: url)
                 return
             } catch {
                 // Fall through to on-device speech below
@@ -331,6 +356,24 @@ final class SpeechPreviewPlayer: NSObject, ObservableObject, AVSpeechSynthesizer
             self.tempURL = nil
         }
         isPlaying = false
+    }
+
+    private func playAudio(url: URL) {
+        tempURL = url
+        let item = AVPlayerItem(url: url)
+        let avPlayer = AVPlayer(playerItem: item)
+        player = avPlayer
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.isPlaying = false
+            }
+        }
+        isPlaying = true
+        avPlayer.play()
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {

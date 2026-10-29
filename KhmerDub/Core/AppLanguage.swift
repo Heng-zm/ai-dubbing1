@@ -81,6 +81,7 @@ enum DubMode: String, CaseIterable, Identifiable, Codable {
     case replace
     case mix
     case background
+    case smartDuck
 
     var id: String { rawValue }
 
@@ -91,6 +92,7 @@ enum DubMode: String, CaseIterable, Identifiable, Codable {
         case .replace: return "waveform.badge.minus"
         case .mix: return "waveform.badge.plus"
         case .background: return "music.note"
+        case .smartDuck: return "waveform.and.person.filled"
         }
     }
 }
@@ -122,6 +124,51 @@ enum ExportKind: String, Codable {
         case .video: return "film"
         case .audio: return "waveform"
         case .subtitle: return "captions.bubble"
+        }
+    }
+}
+
+enum ProjectAspectRatio: String, CaseIterable, Identifiable, Codable {
+    case original
+    case nineSixteen
+    case sixteenNine
+    case oneOne
+
+    var id: String { rawValue }
+    var localizationKey: String { "aspectRatio.\(rawValue)" }
+
+    var symbol: String {
+        switch self {
+        case .original: return "aspectratio"
+        case .nineSixteen: return "rectangle.portrait"
+        case .sixteenNine: return "rectangle"
+        case .oneOne: return "square"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .original: return "Original"
+        case .nineSixteen: return "9:16"
+        case .sixteenNine: return "16:9"
+        case .oneOne: return "1:1"
+        }
+    }
+}
+
+enum BurnInSubtitleStyle: String, CaseIterable, Identifiable, Codable {
+    case pill
+    case neon
+    case classic
+
+    var id: String { rawValue }
+    var localizationKey: String { "subtitles.style.\(rawValue)" }
+
+    var symbol: String {
+        switch self {
+        case .pill: return "capsule.fill"
+        case .neon: return "sparkles"
+        case .classic: return "text.bubble"
         }
     }
 }

@@ -197,6 +197,10 @@ struct DubProject: Identifiable, Codable, Hashable {
     var normalizeVolume: Bool = false
     var includeSubtitles: Bool = true
     var export60FPS: Bool? = true
+    var aspectRatio: ProjectAspectRatio? = .original
+    var burnInSubtitles: Bool? = false
+    var subtitleStyle: BurnInSubtitleStyle? = .pill
+    var smartDucking: Bool? = true
     var isDemo: Bool = false
     var notes: String = ""
     var exports: [ExportRecord] = []
@@ -204,6 +208,26 @@ struct DubProject: Identifiable, Codable, Hashable {
     var is60FPS: Bool {
         get { export60FPS ?? true }
         set { export60FPS = newValue }
+    }
+
+    var currentAspectRatio: ProjectAspectRatio {
+        get { aspectRatio ?? .original }
+        set { aspectRatio = newValue }
+    }
+
+    var shouldBurnInSubtitles: Bool {
+        get { burnInSubtitles ?? false }
+        set { burnInSubtitles = newValue }
+    }
+
+    var currentSubtitleStyle: BurnInSubtitleStyle {
+        get { subtitleStyle ?? .pill }
+        set { subtitleStyle = newValue }
+    }
+
+    var isSmartDuckingEnabled: Bool {
+        get { smartDucking ?? true }
+        set { smartDucking = newValue }
     }
 
     var hasMedia: Bool { mediaFileName != nil }

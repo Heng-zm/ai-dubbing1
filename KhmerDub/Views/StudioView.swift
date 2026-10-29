@@ -264,7 +264,7 @@ struct StudioScreen: View {
                                     Image(systemName: "bolt.fill")
                                         .font(.system(size: 9, weight: .black))
                                         .foregroundStyle(AppTheme.capcutCyan)
-                                    Text("1080P · 60FPS · GPU")
+                                    Text("\(model.project.currentAspectRatio.label.uppercased()) · 60FPS · GPU")
                                         .font(.system(size: 9.5, weight: .black, design: .rounded))
                                         .foregroundStyle(.white)
                                 }

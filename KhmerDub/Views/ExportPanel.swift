@@ -261,6 +261,115 @@ struct ExportPanel: View {
                     }
                 }
                 .tint(AppTheme.goldDeep)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(loc.t("export.aspectRatio"))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(AppTheme.textPrimary)
+                    HStack(spacing: 6) {
+                        ForEach(ProjectAspectRatio.allCases) { ratio in
+                            Button {
+                                model.project.currentAspectRatio = ratio
+                                Haptics.selection()
+                            } label: {
+                                VStack(spacing: 3) {
+                                    Image(systemName: ratio.symbol)
+                                        .font(.system(size: 12, weight: .bold))
+                                    Text(ratio.label)
+                                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                                }
+                                .foregroundStyle(model.project.currentAspectRatio == ratio ? Color(hex: 0x0A0D14) : AppTheme.textSecondary)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 44)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(model.project.currentAspectRatio == ratio ? AppTheme.capcutCyan : AppTheme.surfaceMuted)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .stroke(model.project.currentAspectRatio == ratio ? AppTheme.capcutCyan : AppTheme.border, lineWidth: 1)
+                                        )
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+
+                Toggle(isOn: Binding(
+                    get: { model.project.shouldBurnInSubtitles },
+                    set: { model.project.shouldBurnInSubtitles = $0 }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(loc.t("export.burnInSubtitles"))
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(AppTheme.textPrimary)
+                            Text("CAPCUT")
+                                .font(.system(size: 8.5, weight: .black, design: .rounded))
+                                .foregroundStyle(AppTheme.capcutCyan)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(AppTheme.capcutCyan.opacity(0.18)))
+                        }
+                        Text(loc.t("export.burnInSubtitlesHint"))
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(AppTheme.textTertiary)
+                    }
+                }
+                .tint(AppTheme.capcutCyan)
+
+                if model.project.shouldBurnInSubtitles {
+                    HStack(spacing: 6) {
+                        ForEach(BurnInSubtitleStyle.allCases) { style in
+                            Button {
+                                model.project.currentSubtitleStyle = style
+                                Haptics.selection()
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: style.symbol)
+                                        .font(.system(size: 10, weight: .bold))
+                                    Text(loc.t(style.localizationKey))
+                                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                }
+                                .foregroundStyle(model.project.currentSubtitleStyle == style ? Color(hex: 0x0A0D14) : AppTheme.textSecondary)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 32)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                        .fill(model.project.currentSubtitleStyle == style ? AppTheme.capcutNeonGold : AppTheme.surfaceMuted)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.top, -2)
+                }
+            }
+
+            if model.project.hasAudio && model.project.mode != .replace {
+                Toggle(isOn: Binding(
+                    get: { model.project.isSmartDuckingEnabled },
+                    set: { model.project.isSmartDuckingEnabled = $0 }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(loc.t("export.smartDucking"))
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(AppTheme.textPrimary)
+                            Text("PRO")
+                                .font(.system(size: 8.5, weight: .black, design: .rounded))
+                                .foregroundStyle(AppTheme.teal)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(AppTheme.teal.opacity(0.18)))
+                        }
+                        Text(loc.t("export.smartDuckingHint"))
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(AppTheme.textTertiary)
+                    }
+                }
+                .tint(AppTheme.teal)
             }
 
             Toggle(isOn: Binding(

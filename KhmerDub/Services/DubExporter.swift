@@ -1,5 +1,7 @@
 import AVFoundation
 import Foundation
+import QuartzCore
+import UIKit
 
 enum ExportPhase: String, CaseIterable {
     case voices
@@ -142,12 +144,13 @@ final class DubExporter {
             session.audioMix = audioMix
         }
 
-        // Hardware GPU Accelerated 60 FPS Video Composition
+        // Hardware GPU Accelerated 60 FPS Video Composition with Aspect Ratio & Subtitle Burn-In
         if format == .video {
-            let videoComposition = AVMutableVideoComposition(propertiesOf: composition.composition)
-            let fps: Int32 = project.is60FPS ? 60 : 30
-            videoComposition.frameDuration = CMTime(value: 1, timescale: fps)
-            videoComposition.renderScale = 1.0
+            let videoComposition = buildVideoComposition(
+                for: composition.composition,
+                project: project,
+                duration: composition.composition.duration.seconds
+            )
             session.videoComposition = videoComposition
         }
         let compositionDuration = composition.composition.duration
@@ -263,10 +266,56 @@ final class DubExporter {
                     let audioRange = try await sourceAudio.load(.timeRange)
                     try audioTrack.insertTimeRange(audioRange, of: sourceAudio, at: .zero)
                     let parameters = AVMutableAudioMixInputParameters(track: audioTrack)
-                    let volume = project.mode == .background
-                        ? min(project.originalVolume, 0.28)
-                        : project.originalVolume
-                    parameters.setVolume(Float(volume.clamped(to: 0...1)), at: .zero)
+
+                    if project.isSmartDuckingEnabled && !voices.isEmpty {
+                        // Smart Audio Ducking: smooth volume ramps during dialogue
+                        let rawIntervals = voices
+                            .map { (start: $0.segment.start, end: max($0.segment.start + 0.3, $0.segment.end)) }
+                            .sorted { $0.start < $1.start }
+
+                        var mergedIntervals: [(start: Double, end: Double)] = []
+                        for interval in rawIntervals {
+                            if let last = mergedIntervals.last, interval.start <= last.end + 0.45 {
+                                mergedIntervals[mergedIntervals.count - 1].end = max(last.end, interval.end)
+                            } else {
+                                mergedIntervals.append(interval)
+                            }
+                        }
+
+                        let normalVol = Float(project.originalVolume.clamped(to: 0.1...1.0))
+                        let duckedVol = Float(max(0.04, min(Double(normalVol) * 0.16, 0.14)))
+
+                        parameters.setVolume(normalVol, at: .zero)
+                        for interval in mergedIntervals {
+                            let rampInStart = max(0, interval.start - 0.25)
+                            let rampInDuration = max(0.05, interval.start - rampInStart)
+                            parameters.setVolumeRamp(
+                                fromStartVolume: normalVol,
+                                toEndVolume: duckedVol,
+                                timeRange: CMTimeRange(
+                                    start: CMTime(seconds: rampInStart, preferredTimescale: 600),
+                                    duration: CMTime(seconds: rampInDuration, preferredTimescale: 600)
+                                )
+                            )
+                            parameters.setVolume(
+                                duckedVol,
+                                at: CMTime(seconds: interval.start, preferredTimescale: 600)
+                            )
+                            parameters.setVolumeRamp(
+                                fromStartVolume: duckedVol,
+                                toEndVolume: normalVol,
+                                timeRange: CMTimeRange(
+                                    start: CMTime(seconds: interval.end, preferredTimescale: 600),
+                                    duration: CMTime(seconds: 0.35, preferredTimescale: 600)
+                                )
+                            )
+                        }
+                    } else {
+                        let volume = project.mode == .background
+                            ? min(project.originalVolume, 0.28)
+                            : project.originalVolume
+                        parameters.setVolume(Float(volume.clamped(to: 0...1)), at: .zero)
+                    }
                     mixParameters.append(parameters)
                 }
             }
@@ -382,6 +431,170 @@ final class DubExporter {
     private func fileSize(at url: URL) -> Int64 {
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
         return (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+    }
+
+    private func buildVideoComposition(
+        for composition: AVMutableComposition,
+        project: DubProject,
+        duration: Double
+    ) -> AVMutableVideoComposition {
+        guard let sourceTrack = composition.tracks(withMediaType: .video).first else {
+            let fallback = AVMutableVideoComposition(propertiesOf: composition)
+            fallback.frameDuration = CMTime(value: 1, timescale: project.is60FPS ? 60 : 30)
+            return fallback
+        }
+
+        let naturalSize = sourceTrack.naturalSize
+        let transform = sourceTrack.preferredTransform
+        let isRotated = transform.b != 0 || transform.c != 0
+        let realSourceSize = isRotated
+            ? CGSize(width: abs(naturalSize.height), height: abs(naturalSize.width))
+            : CGSize(width: abs(naturalSize.width), height: abs(naturalSize.height))
+
+        let targetAspectRatio = project.currentAspectRatio
+        let renderSize: CGSize
+        switch targetAspectRatio {
+        case .original:
+            renderSize = realSourceSize.width > 0 && realSourceSize.height > 0
+                ? realSourceSize
+                : CGSize(width: 1920, height: 1080)
+        case .nineSixteen:
+            renderSize = CGSize(width: 1080, height: 1920)
+        case .sixteenNine:
+            renderSize = CGSize(width: 1920, height: 1080)
+        case .oneOne:
+            renderSize = CGSize(width: 1080, height: 1080)
+        }
+
+        let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: sourceTrack)
+        if targetAspectRatio == .original {
+            layerInstruction.setTransform(transform, at: .zero)
+        } else {
+            let scaleX = renderSize.width / max(1, realSourceSize.width)
+            let scaleY = renderSize.height / max(1, realSourceSize.height)
+            let fitScale = min(scaleX, scaleY)
+
+            let scaledW = realSourceSize.width * fitScale
+            let scaledH = realSourceSize.height * fitScale
+            let posX = (renderSize.width - scaledW) / 2.0
+            let posY = (renderSize.height - scaledH) / 2.0
+
+            var finalTransform = transform
+            finalTransform = finalTransform.concatenating(CGAffineTransform(scaleX: fitScale, y: fitScale))
+            finalTransform = finalTransform.concatenating(CGAffineTransform(translationX: posX, y: posY))
+            layerInstruction.setTransform(finalTransform, at: .zero)
+        }
+
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
+        instruction.layerInstructions = [layerInstruction]
+        instruction.backgroundColor = CGColor(red: 0.04, green: 0.05, blue: 0.08, alpha: 1.0)
+
+        let videoComposition = AVMutableVideoComposition()
+        let fps: Int32 = project.is60FPS ? 60 : 30
+        videoComposition.frameDuration = CMTime(value: 1, timescale: fps)
+        videoComposition.renderSize = renderSize
+        videoComposition.instructions = [instruction]
+        videoComposition.renderScale = 1.0
+
+        // Burn-In Open Captions (CapCut Style)
+        if project.shouldBurnInSubtitles {
+            let usableSegments = project.segments.filter {
+                $0.isIncluded && $0.end > $0.start && !$0.translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            if !usableSegments.isEmpty {
+                let videoLayer = CALayer()
+                videoLayer.frame = CGRect(origin: .zero, size: renderSize)
+
+                let rootLayer = CALayer()
+                rootLayer.frame = CGRect(origin: .zero, size: renderSize)
+                rootLayer.addSublayer(videoLayer)
+
+                let overlayLayer = CALayer()
+                overlayLayer.frame = CGRect(origin: .zero, size: renderSize)
+                rootLayer.addSublayer(overlayLayer)
+
+                let totalDuration = max(0.1, duration > 0 ? duration : composition.duration.seconds)
+                let scaleFactor = renderSize.width / 1080.0
+                let subWidth = min(renderSize.width * 0.90, 940.0 * scaleFactor)
+                let subHeight = max(60.0 * scaleFactor, 90.0 * scaleFactor)
+                let subY = renderSize.height * 0.12
+
+                for segment in usableSegments {
+                    let cleanText = segment.translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !cleanText.isEmpty else { continue }
+
+                    let pillLayer = CALayer()
+                    pillLayer.frame = CGRect(
+                        x: (renderSize.width - subWidth) / 2.0,
+                        y: subY,
+                        width: subWidth,
+                        height: subHeight
+                    )
+
+                    switch project.currentSubtitleStyle {
+                    case .pill:
+                        pillLayer.backgroundColor = CGColor(red: 0, green: 0, blue: 0, alpha: 0.72)
+                        pillLayer.cornerRadius = 16 * scaleFactor
+                        pillLayer.borderWidth = 1.5 * scaleFactor
+                        pillLayer.borderColor = CGColor(red: 1, green: 1, blue: 1, alpha: 0.18)
+                        pillLayer.shadowColor = CGColor(red: 0, green: 0, blue: 0, alpha: 0.5)
+                        pillLayer.shadowRadius = 8 * scaleFactor
+                    case .neon:
+                        pillLayer.backgroundColor = CGColor(red: 0.05, green: 0.07, blue: 0.12, alpha: 0.85)
+                        pillLayer.cornerRadius = 16 * scaleFactor
+                        pillLayer.borderWidth = 2.0 * scaleFactor
+                        pillLayer.borderColor = CGColor(red: 0.0, green: 0.85, blue: 0.85, alpha: 0.9)
+                        pillLayer.shadowColor = CGColor(red: 0.0, green: 0.85, blue: 0.85, alpha: 0.7)
+                        pillLayer.shadowRadius = 10 * scaleFactor
+                    case .classic:
+                        pillLayer.backgroundColor = CGColor(red: 0, green: 0, blue: 0, alpha: 0.0)
+                        pillLayer.shadowColor = CGColor(red: 0, green: 0, blue: 0, alpha: 0.9)
+                        pillLayer.shadowRadius = 6 * scaleFactor
+                        pillLayer.shadowOffset = CGSize(width: 0, height: -2)
+                        pillLayer.shadowOpacity = 1.0
+                    }
+
+                    let textLayer = CATextLayer()
+                    textLayer.frame = pillLayer.bounds.insetBy(dx: 14 * scaleFactor, dy: 8 * scaleFactor)
+                    textLayer.string = cleanText
+                    textLayer.font = "KhmerSangamMN" as CFTypeRef
+                    textLayer.fontSize = max(20.0, 32.0 * scaleFactor)
+                    textLayer.foregroundColor = CGColor(red: 1, green: 1, blue: 1, alpha: 1)
+                    textLayer.alignmentMode = .center
+                    textLayer.isWrapped = true
+                    textLayer.contentsScale = 2.0
+                    pillLayer.addSublayer(textLayer)
+
+                    let anim = CAKeyframeAnimation(keyPath: "opacity")
+                    anim.duration = totalDuration
+                    let sTime = (segment.start / totalDuration).clamped(to: 0...1)
+                    let eTime = (segment.end / totalDuration).clamped(to: 0...1)
+                    anim.keyTimes = [
+                        0.0,
+                        NSNumber(value: max(0, sTime - 0.0001)),
+                        NSNumber(value: sTime),
+                        NSNumber(value: eTime),
+                        NSNumber(value: min(1.0, eTime + 0.0001)),
+                        1.0
+                    ]
+                    anim.values = [0.0, 0.0, 1.0, 1.0, 0.0, 0.0]
+                    anim.isRemovedOnCompletion = false
+                    anim.fillMode = .forwards
+                    anim.beginTime = AVCoreAnimationBeginTimeAtZero
+                    pillLayer.add(anim, forKey: "visibility")
+
+                    overlayLayer.addSublayer(pillLayer)
+                }
+
+                videoComposition.animationTool = AVVideoCompositionCoreAnimationTool(
+                    postProcessingAsVideoLayer: videoLayer,
+                    in: rootLayer
+                )
+            }
+        }
+
+        return videoComposition
     }
 }
 
