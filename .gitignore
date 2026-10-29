@@ -1,0 +1,15 @@
+# Xcode
+build/
+DerivedData/
+*.xcarchive
+*.xcuserstate
+xcuserdata/
+*.ipa
+*.dSYM.zip
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc

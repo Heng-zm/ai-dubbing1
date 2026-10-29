@@ -1,0 +1,91 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: |
+          xcodebuild -version
+          xcodebuild -project KhmerDub.xcodeproj -list
+
+      - name: Build unsigned archive
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project KhmerDub.xcodeproj \
+            -scheme KhmerDub \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/KhmerDub.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            clean archive 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+
+      - name: Publish build failure summary
+        if: failure()
+        run: |
+          if [ -f "$RUNNER_TEMP/xcodebuild.log" ]; then
+            {
+              echo '## xcodebuild failure'
+              echo '```'
+              grep -E 'error:|BUILD FAILED|ARCHIVE FAILED|The following build commands failed' "$RUNNER_TEMP/xcodebuild.log" | tail -n 100 || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/KhmerDub.xcarchive/Products/Applications/KhmerDub.app"
+          test -d "$APP"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
+          cd "$RUNNER_TEMP/ipa"
+          zip -qry KhmerDub-unsigned.ipa Payload
+          shasum -a 256 KhmerDub-unsigned.ipa | tee KhmerDub-unsigned.ipa.sha256
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KhmerDub-unsigned-ipa
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/ipa/KhmerDub-unsigned.ipa
+            ${{ runner.temp }}/ipa/KhmerDub-unsigned.ipa.sha256
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: KhmerDub build ${{ github.run_number }}
+          make_latest: true
+          generate_release_notes: true
+          body: |
+            Unsigned iOS IPA built from `${{ github.sha }}`.
+
+            This build is **not code signed**. Install it through a signing or
+            sideloading tool (such as TrollStore, AltStore, SideStore, or Sideloadly)
+            using your own Apple development certificate and provisioning profile.
+          files: |
+            ${{ runner.temp }}/ipa/KhmerDub-unsigned.ipa
+            ${{ runner.temp }}/ipa/KhmerDub-unsigned.ipa.sha256
