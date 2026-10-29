@@ -148,6 +148,7 @@ final class DubExporter {
         session.outputURL = outputURL
         session.outputFileType = format == .video ? .mp4 : .m4a
         session.shouldOptimizeForNetworkUse = true
+        session.audioTimePitchAlgorithm = .timeDomain
         if let audioMix = composition.audioMix {
             session.audioMix = audioMix
         }
@@ -164,10 +165,14 @@ final class DubExporter {
                 try? await Task.sleep(nanoseconds: 280_000_000)
             }
         }
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            session.exportAsynchronously {
-                continuation.resume()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                session.exportAsynchronously {
+                    continuation.resume()
+                }
             }
+        } onCancel: {
+            session.cancelExport()
         }
         progressTask.cancel()
 
@@ -273,17 +278,28 @@ final class DubExporter {
             }
         }
 
+        // Dialogue track pool: reuse up to 4 alternating tracks to prevent
+        // AVFoundation track limit exhaustion (-11820 / -11838) on projects with many lines.
+        final class TrackSlot {
+            let track: AVMutableCompositionTrack
+            var lastEndTime: CMTime
+            let parameters: AVMutableAudioMixInputParameters
+
+            init(track: AVMutableCompositionTrack, parameters: AVMutableAudioMixInputParameters) {
+                self.track = track
+                self.lastEndTime = .zero
+                self.parameters = parameters
+            }
+        }
+
+        var trackPool: [TrackSlot] = []
+        let maxTracks = 4
+
         for voice in voices {
             let asset = AVURLAsset(url: voice.url)
             let audioTracks = try await asset.loadTracks(withMediaType: .audio)
             guard let sourceAudio = audioTracks.first else {
                 throw ExportError.renderFailed("A generated voice clip had no audio.")
-            }
-            guard let track = composition.addMutableTrack(
-                withMediaType: .audio,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-            ) else {
-                throw ExportError.renderFailed("A voice track could not be created.")
             }
             let range = try await sourceAudio.load(.timeRange)
             guard range.duration.seconds > 0.01 else { continue }
@@ -291,20 +307,44 @@ final class DubExporter {
                 seconds: max(0, voice.segment.start),
                 preferredTimescale: 600
             )
-            try track.insertTimeRange(range, of: sourceAudio, at: insertTime)
 
+            // Select an existing non-overlapping track or allocate a new one if below max limit
+            var selectedSlot: TrackSlot? = trackPool.first(where: { $0.lastEndTime <= insertTime })
+            if selectedSlot == nil && trackPool.count < maxTracks {
+                guard let newTrack = composition.addMutableTrack(
+                    withMediaType: .audio,
+                    preferredTrackID: kCMPersistentTrackID_Invalid
+                ) else {
+                    throw ExportError.renderFailed("A voice track could not be created.")
+                }
+                let params = AVMutableAudioMixInputParameters(track: newTrack)
+                let newSlot = TrackSlot(track: newTrack, parameters: params)
+                trackPool.append(newSlot)
+                mixParameters.append(params)
+                selectedSlot = newSlot
+            }
+            if selectedSlot == nil {
+                selectedSlot = trackPool.min(by: { $0.lastEndTime < $1.lastEndTime })
+            }
+            guard let slot = selectedSlot else {
+                throw ExportError.renderFailed("A voice track could not be created.")
+            }
+
+            try slot.track.insertTimeRange(range, of: sourceAudio, at: insertTime)
+            var finalDuration = range.duration
             if project.fitSpeech, range.duration.seconds > voice.segment.duration {
                 let target = CMTime(
                     seconds: max(0.2, voice.segment.duration),
                     preferredTimescale: 600
                 )
-                track.scaleTimeRange(
+                slot.track.scaleTimeRange(
                     CMTimeRange(start: insertTime, duration: range.duration),
                     toDuration: target
                 )
+                finalDuration = target
             }
+            slot.lastEndTime = insertTime + finalDuration
 
-            let parameters = AVMutableAudioMixInputParameters(track: track)
             var volume = project.dubVolume.clamped(to: 0...1)
             if project.normalizeVolume, let peak = await AudioPeakAnalyzer.peak(for: voice.url) {
                 if peak > 0.02 {
@@ -312,8 +352,7 @@ final class DubExporter {
                     volume = min(1, volume * Double(gain))
                 }
             }
-            parameters.setVolume(Float(volume), at: .zero)
-            mixParameters.append(parameters)
+            slot.parameters.setVolume(Float(volume), at: insertTime)
         }
 
         let mix: AVMutableAudioMix?

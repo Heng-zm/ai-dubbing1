@@ -73,22 +73,28 @@ struct StudioScriptView: View {
     }
 
     private func segmentRow(_ segment: DubSegment) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let isCurrentPlayback = playback.isPlaying && playback.currentTime >= segment.start && playback.currentTime <= segment.end
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 7) {
                 Button {
                     guard playback.hasItem else { return }
-                    playback.seekAndPlay(to: segment.start)
+                    if isCurrentPlayback {
+                        playback.pause()
+                    } else {
+                        playback.seekAndPlay(to: segment.start)
+                    }
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 7, weight: .bold))
+                        Image(systemName: isCurrentPlayback ? "speaker.wave.3.fill" : "play.fill")
+                            .font(.system(size: isCurrentPlayback ? 8 : 7, weight: .bold))
+                            .foregroundStyle(isCurrentPlayback ? AppTheme.goldDeep : AppTheme.textSecondary)
                         Text(Formatters.preciseTimecode(segment.start))
                     }
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(AppTheme.textSecondary)
+                    .foregroundStyle(isCurrentPlayback ? AppTheme.goldDeep : AppTheme.textSecondary)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 4)
-                    .background(Capsule().fill(AppTheme.surfaceMuted))
+                    .background(Capsule().fill(isCurrentPlayback ? AppTheme.gold.opacity(0.18) : AppTheme.surfaceMuted))
                 }
                 .buttonStyle(.plain)
                 .disabled(!playback.hasItem)
@@ -200,12 +206,16 @@ struct StudioScriptView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(AppTheme.surface)
+                .fill(isCurrentPlayback ? AppTheme.surfaceElevated : AppTheme.surface)
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(segment.isIncluded ? AppTheme.border : AppTheme.border.opacity(0.45), lineWidth: 1)
+                        .stroke(
+                            isCurrentPlayback ? AppTheme.gold : (segment.isIncluded ? AppTheme.border : AppTheme.border.opacity(0.45)),
+                            lineWidth: isCurrentPlayback ? 1.5 : 1
+                        )
                 )
         )
+        .animation(.easeInOut(duration: 0.22), value: isCurrentPlayback)
         .opacity(segment.isIncluded ? 1 : 0.55)
         .contextMenu {
             Button {

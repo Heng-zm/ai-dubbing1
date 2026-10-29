@@ -196,8 +196,8 @@ struct DubProject: Identifiable, Codable, Hashable {
     var fitSpeech: Bool = true
     var normalizeVolume: Bool = false
     var includeSubtitles: Bool = true
-    var notes: String = ""
     var isDemo: Bool = false
+    var notes: String = ""
     var exports: [ExportRecord] = []
 
     var hasMedia: Bool { mediaFileName != nil }

@@ -470,9 +470,30 @@ final class OpenAIService {
 
     private func parseTranslation(_ content: String) throws -> [String: String] {
         let cleaned = Self.stripMarkdownFences(content)
+
+        // 1. Check if the model returned a top-level array of segments: [{"id": "...", "text": "..."}]
+        if let arrayStart = cleaned.firstIndex(of: "["),
+           let arrayEnd = cleaned.lastIndex(of: "]"),
+           arrayStart < arrayEnd {
+            let objStart = cleaned.firstIndex(of: "{")
+            if objStart == nil || arrayStart < objStart! {
+                let arrayJSON = String(cleaned[arrayStart...arrayEnd])
+                if let arrayData = arrayJSON.data(using: .utf8),
+                   let items = try? JSONDecoder().decode([TranslationEnvelope.Item].self, from: arrayData) {
+                    var output: [String: String] = [:]
+                    for item in items {
+                        output[item.id] = item.text
+                    }
+                    if !output.isEmpty { return output }
+                }
+            }
+        }
+
+        // 2. Object envelope: {"segments": [...]} or dictionary {"id": "text"}
         guard
             let start = cleaned.firstIndex(of: "{"),
-            let end = cleaned.lastIndex(of: "}")
+            let end = cleaned.lastIndex(of: "}"),
+            start <= end
         else {
             throw AIServiceError.unsupportedResponse
         }
@@ -489,6 +510,13 @@ final class OpenAIService {
         }
         if let dictionary = try? JSONDecoder().decode([String: String].self, from: data) {
             return dictionary
+        }
+        if let items = try? JSONDecoder().decode([TranslationEnvelope.Item].self, from: data) {
+            var output: [String: String] = [:]
+            for item in items {
+                output[item.id] = item.text
+            }
+            return output
         }
         throw AIServiceError.decoding
     }

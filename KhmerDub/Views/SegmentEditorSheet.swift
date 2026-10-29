@@ -37,7 +37,7 @@ struct SegmentEditorSheet: View {
                     if let segment {
                         VStack(alignment: .leading, spacing: 14) {
                             topSummary(segment)
-                            originalCard
+                            originalCard(segment)
                             khmerCard(segment)
                             timingCard(segment)
                             speakerCard(segment)
@@ -117,13 +117,35 @@ struct SegmentEditorSheet: View {
         }
     }
 
-    private var originalCard: some View {
+    private func originalCard(_ segment: DubSegment) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            CardIconTitle(
-                symbol: "text.alignleft",
-                title: loc.t("segment.original"),
-                tint: AppTheme.indigo
-            )
+            HStack {
+                CardIconTitle(
+                    symbol: "text.alignleft",
+                    title: loc.t("segment.original"),
+                    tint: AppTheme.indigo
+                )
+                Spacer()
+                if playback.hasItem {
+                    Button {
+                        if playback.isPlaying && playback.currentTime >= segment.start && playback.currentTime <= segment.end {
+                            playback.pause()
+                        } else {
+                            playback.seekAndPlay(to: segment.start)
+                        }
+                        Haptics.tap()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: playback.isPlaying && playback.currentTime >= segment.start && playback.currentTime <= segment.end ? "pause.fill" : "play.fill")
+                                .font(.system(size: 10, weight: .bold))
+                            Text(loc.t("studio.linePreview"))
+                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                        }
+                    }
+                    .buttonStyle(CompactButtonStyle(tint: AppTheme.indigo))
+                    .accessibilityLabel(Text(loc.t("studio.linePreview")))
+                }
+            }
             textEditor(
                 text: textBinding(\.originalText),
                 placeholder: loc.t("import.tip")
@@ -134,11 +156,19 @@ struct SegmentEditorSheet: View {
 
     private func khmerCard(_ segment: DubSegment) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            CardIconTitle(
-                symbol: "character.book.closed",
-                title: loc.t("segment.khmer"),
-                tint: AppTheme.goldDeep
-            )
+            HStack {
+                CardIconTitle(
+                    symbol: "character.book.closed",
+                    title: loc.t("segment.khmer"),
+                    tint: AppTheme.goldDeep
+                )
+                Spacer()
+                if segment.khmerCharacterCount > 0 {
+                    Text("\(segment.khmerCharacterCount) " + loc.t("common.characters"))
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(AppTheme.textTertiary)
+                }
+            }
             textEditor(
                 text: textBinding(\.translatedText),
                 placeholder: loc.t("lab.textPlaceholder")

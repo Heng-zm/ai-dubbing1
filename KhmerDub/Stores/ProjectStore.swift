@@ -72,12 +72,13 @@ final class ProjectStore: ObservableObject {
         }
         copy.recalculateStage()
 
-        AppFiles.createProjectDirectories(copy.id)
+        try? fileManager.createDirectory(at: AppFiles.projectExportDirectory(copy.id), withIntermediateDirectories: true)
         let oldDirectory = AppFiles.projectMediaDirectory(project.id)
         let newDirectory = AppFiles.projectMediaDirectory(copy.id)
         if fileManager.fileExists(atPath: oldDirectory.path) {
-            try? fileManager.removeItem(at: newDirectory)
             try? fileManager.copyItem(at: oldDirectory, to: newDirectory)
+        } else {
+            try? fileManager.createDirectory(at: newDirectory, withIntermediateDirectories: true)
         }
         upsert(copy, immediate: true)
         return copy

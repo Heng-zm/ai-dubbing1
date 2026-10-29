@@ -244,9 +244,37 @@ struct SheetHeader: View {
 struct EmptyStateView: View {
     let symbol: String
     let title: String
-    let body: String
+    let message: String
     var actionTitle: String?
     var action: (() -> Void)?
+
+    init(
+        symbol: String,
+        title: String,
+        message: String = "",
+        actionTitle: String? = nil,
+        action: (() -> Void)? = nil
+    ) {
+        self.symbol = symbol
+        self.title = title
+        self.message = message
+        self.actionTitle = actionTitle
+        self.action = action
+    }
+
+    init(
+        symbol: String,
+        title: String,
+        body: String,
+        actionTitle: String? = nil,
+        action: (() -> Void)? = nil
+    ) {
+        self.symbol = symbol
+        self.title = title
+        self.message = body
+        self.actionTitle = actionTitle
+        self.action = action
+    }
 
     var body: some View {
         VStack(spacing: 13) {
@@ -262,7 +290,7 @@ struct EmptyStateView: View {
                 .font(.system(size: 18, weight: .bold, design: .rounded))
                 .foregroundStyle(AppTheme.textPrimary)
                 .multilineTextAlignment(.center)
-            Text(body)
+            Text(message)
                 .font(.system(size: 13.5, weight: .medium))
                 .foregroundStyle(AppTheme.textSecondary)
                 .multilineTextAlignment(.center)

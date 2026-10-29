@@ -84,6 +84,13 @@ struct TranslateSheet: View {
                 AIEngineSettingsView()
                     .environmentObject(settings)
                     .environmentObject(loc)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button(loc.t("common.done")) {
+                                showAISettings = false
+                            }
+                        }
+                    }
             }
         }
         .sheet(isPresented: $showGlossary) {
@@ -92,6 +99,13 @@ struct TranslateSheet: View {
                     .environmentObject(settings)
                     .environmentObject(loc)
                     .environmentObject(toasts)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button(loc.t("common.done")) {
+                                showGlossary = false
+                            }
+                        }
+                    }
             }
         }
         .alert(

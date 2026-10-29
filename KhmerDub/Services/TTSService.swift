@@ -122,6 +122,8 @@ private final class SpeechRenderOperation {
         if pcm.frameLength == 0 {
             if hasWrittenAudio {
                 finish(error: nil)
+            } else {
+                finish(error: TTSError.renderFailed("No audio was produced."))
             }
             return
         }

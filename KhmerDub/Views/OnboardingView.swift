@@ -30,7 +30,7 @@ struct OnboardingView: View {
                         OnboardingPage(
                             symbol: pages[index].symbol,
                             title: loc.t(pages[index].titleKey),
-                            body: loc.t(pages[index].bodyKey),
+                            message: loc.t(pages[index].bodyKey),
                             accent: pages[index].accent
                         )
                         .tag(index)
@@ -172,7 +172,7 @@ struct OnboardingView: View {
 private struct OnboardingPage: View {
     let symbol: String
     let title: String
-    let body: String
+    let message: String
     let accent: Color
 
     var body: some View {
@@ -200,7 +200,7 @@ private struct OnboardingPage: View {
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)
                     .minimumScaleFactor(0.75)
-                Text(body)
+                Text(message)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.white.opacity(0.64))
                     .multilineTextAlignment(.center)

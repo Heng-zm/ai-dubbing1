@@ -282,10 +282,14 @@ enum AudioExtractor {
         session.outputFileType = .m4a
         session.timeRange = timeRange
         session.shouldOptimizeForNetworkUse = false
-        await withCheckedContinuation { continuation in
-            session.exportAsynchronously {
-                continuation.resume()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                session.exportAsynchronously {
+                    continuation.resume()
+                }
             }
+        } onCancel: {
+            session.cancelExport()
         }
         switch session.status {
         case .completed:

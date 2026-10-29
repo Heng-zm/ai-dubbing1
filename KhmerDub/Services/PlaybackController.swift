@@ -30,10 +30,12 @@ final class PlaybackController: ObservableObject {
             forInterval: CMTime(seconds: 0.1, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
-            guard let self else { return }
-            let seconds = time.seconds
-            if seconds.isFinite, seconds >= 0 {
-                self.currentTime = self.duration > 0 ? min(seconds, self.duration) : seconds
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let seconds = time.seconds
+                if seconds.isFinite, seconds >= 0 {
+                    self.currentTime = self.duration > 0 ? min(seconds, self.duration) : seconds
+                }
             }
         }
         endObserver = NotificationCenter.default.addObserver(
@@ -144,10 +146,12 @@ final class AudioFilePlayer: ObservableObject {
             forInterval: CMTime(seconds: 0.1, preferredTimescale: 600),
             queue: .main
         ) { [weak self] time in
-            guard let self else { return }
-            let seconds = time.seconds
-            if seconds.isFinite, seconds >= 0 {
-                self.currentTime = seconds
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let seconds = time.seconds
+                if seconds.isFinite, seconds >= 0 {
+                    self.currentTime = seconds
+                }
             }
         }
         endObserver = NotificationCenter.default.addObserver(

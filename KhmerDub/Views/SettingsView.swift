@@ -1113,3 +1113,496 @@ struct AppLogoMark: View {
         .shadow(color: AppTheme.gold.opacity(0.22), radius: size * 0.16, x: 0, y: size * 0.08)
     }
 }
+
+// MARK: - Glossary
+
+struct GlossaryView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var loc: Localization
+    @EnvironmentObject private var toasts: ToastCenter
+
+    @State private var showingAddSheet = false
+    @State private var editingEntry: GlossaryEntry?
+    @State private var searchText = ""
+
+    private var filteredEntries: [GlossaryEntry] {
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if trimmed.isEmpty {
+            return settings.glossary
+        }
+        return settings.glossary.filter { entry in
+            entry.term.lowercased().contains(trimmed) ||
+            entry.translation.lowercased().contains(trimmed) ||
+            entry.note.lowercased().contains(trimmed)
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            ScreenBackground()
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    headerCard
+
+                    if settings.glossary.isEmpty {
+                        EmptyStateView(
+                            symbol: "character.book.closed",
+                            title: loc.t("glossary.empty.title"),
+                            message: loc.t("glossary.empty.body"),
+                            actionTitle: loc.t("glossary.add"),
+                            action: { showingAddSheet = true }
+                        )
+                        .appCard()
+                    } else {
+                        searchBar
+                        termsList
+                    }
+
+                    hintCard
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+            }
+        }
+        .navigationTitle(loc.t("glossary.title"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingAddSheet = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(AppTheme.goldDeep)
+                }
+            }
+        }
+        .sheet(isPresented: $showingAddSheet) {
+            GlossaryEditorSheet(entry: nil) { newEntry in
+                settings.addGlossaryEntry(newEntry)
+                toasts.show(loc.t("common.saved"))
+                Haptics.success()
+            }
+            .environmentObject(loc)
+        }
+        .sheet(item: $editingEntry) { entry in
+            GlossaryEditorSheet(entry: entry) { updatedEntry in
+                settings.updateGlossaryEntry(updatedEntry)
+                toasts.show(loc.t("common.saved"))
+                Haptics.success()
+            }
+            .environmentObject(loc)
+        }
+    }
+
+    private var headerCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(AppTheme.teal.opacity(0.15))
+                        .frame(width: 38, height: 38)
+                    Image(systemName: "character.book.closed")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(AppTheme.teal)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(loc.t("glossary.title"))
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
+                        .foregroundStyle(AppTheme.textPrimary)
+                    Text(loc.f("translate.glossaryCount", settings.glossary.count))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AppTheme.textSecondary)
+                }
+                Spacer()
+                Button {
+                    showingAddSheet = true
+                } label: {
+                    Label(loc.t("glossary.add"), systemImage: "plus")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .buttonStyle(CompactButtonStyle(tint: AppTheme.teal))
+            }
+
+            Text(loc.t("glossary.subtitle"))
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(AppTheme.textSecondary)
+                .lineSpacing(2)
+        }
+        .appCard()
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(AppTheme.textTertiary)
+            TextField(loc.t("common.search"), text: $searchText)
+                .font(.system(size: 13.5))
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppTheme.textTertiary)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(AppTheme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(AppTheme.border, lineWidth: 1)
+                )
+        )
+    }
+
+    private var termsList: some View {
+        VStack(spacing: 10) {
+            ForEach(filteredEntries) { entry in
+                termRow(entry)
+            }
+        }
+    }
+
+    private func termRow(_ entry: GlossaryEntry) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.term)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(AppTheme.textPrimary)
+                Text(entry.translation)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(AppTheme.goldDeep)
+                if !entry.note.isEmpty {
+                    Text(entry.note)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(AppTheme.textSecondary)
+                }
+            }
+            Spacer()
+            Button {
+                editingEntry = entry
+            } label: {
+                Image(systemName: "pencil")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppTheme.textSecondary)
+                    .padding(8)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                withAnimation {
+                    settings.deleteGlossaryEntry(id: entry.id)
+                    toasts.show(loc.t("glossary.delete"))
+                    Haptics.selection()
+                }
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppTheme.danger)
+                    .padding(8)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(AppTheme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(AppTheme.border, lineWidth: 1)
+                )
+        )
+    }
+
+    private var hintCard: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AppTheme.teal)
+            Text(loc.t("glossary.hint"))
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(AppTheme.textSecondary)
+                .lineSpacing(2)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(AppTheme.teal.opacity(0.08))
+        )
+    }
+}
+
+// MARK: - Glossary Editor Sheet
+
+struct GlossaryEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var loc: Localization
+
+    let initialEntry: GlossaryEntry?
+    let onSave: (GlossaryEntry) -> Void
+
+    @State private var term: String
+    @State private var translation: String
+    @State private var note: String
+    @State private var errorMessage: String?
+
+    init(entry: GlossaryEntry?, onSave: @escaping (GlossaryEntry) -> Void) {
+        self.initialEntry = entry
+        self.onSave = onSave
+        _term = State(initialValue: entry?.term ?? "")
+        _translation = State(initialValue: entry?.translation ?? "")
+        _note = State(initialValue: entry?.note ?? "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                ScreenBackground()
+                    .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        if let errorMessage {
+                            InlineBanner(kind: .warning, text: errorMessage)
+                        }
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            fieldBlock(
+                                title: loc.t("glossary.term"),
+                                placeholder: loc.t("glossary.placeholderTerm"),
+                                text: $term
+                            )
+
+                            DividerLine()
+
+                            fieldBlock(
+                                title: loc.t("glossary.translation"),
+                                placeholder: loc.t("glossary.placeholderTranslation"),
+                                text: $translation
+                            )
+
+                            DividerLine()
+
+                            fieldBlock(
+                                title: loc.t("glossary.note"),
+                                placeholder: loc.t("glossary.note"),
+                                text: $note
+                            )
+                        }
+                        .appCard()
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
+                }
+            }
+            .navigationTitle(initialEntry == nil ? loc.t("glossary.add") : loc.t("glossary.save"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(loc.t("common.cancel")) {
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(loc.t("common.save")) {
+                        save()
+                    }
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(AppTheme.goldDeep)
+                }
+            }
+        }
+    }
+
+    private func fieldBlock(title: String, placeholder: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(AppTheme.textSecondary)
+            TextField(placeholder, text: text)
+                .font(.system(size: 14))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(AppTheme.surfaceElevated)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(AppTheme.border, lineWidth: 1)
+                        )
+                )
+        }
+    }
+
+    private func save() {
+        let cleanTerm = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTerm.isEmpty else {
+            errorMessage = loc.t("glossary.termRequired")
+            Haptics.warning()
+            return
+        }
+        let cleanTranslation = translation.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var entry = initialEntry ?? GlossaryEntry(term: cleanTerm, translation: cleanTranslation)
+        entry.term = cleanTerm
+        entry.translation = cleanTranslation
+        entry.note = cleanNote
+
+        onSave(entry)
+        dismiss()
+    }
+}
+
+// MARK: - About View
+
+struct AboutView: View {
+    @EnvironmentObject private var loc: Localization
+
+    var body: some View {
+        ZStack {
+            ScreenBackground()
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: 20) {
+                    heroSection
+
+                    VStack(alignment: .leading, spacing: 14) {
+                        aboutCard
+                        creditsCard
+                        privacyCard
+                        disclaimerCard
+                        linksCard
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+            }
+        }
+        .navigationTitle(loc.t("settings.about"))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var heroSection: some View {
+        VStack(spacing: 12) {
+            AppLogoMark(size: 84)
+                .padding(.top, 8)
+
+            VStack(spacing: 4) {
+                Text(loc.t("app.name"))
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary)
+
+                Text("\(loc.t("settings.about.version")) \(AppInfo.version)")
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(AppTheme.goldDeep)
+
+                Text(loc.t("settings.about.tagline"))
+                    .font(.system(size: 13.5, weight: .medium))
+                    .foregroundStyle(AppTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+    }
+
+    private var aboutCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(loc.t("settings.about.made"), systemImage: "heart.fill")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(AppTheme.goldDeep)
+            Text(loc.t("app.tagline"))
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(AppTheme.textSecondary)
+                .lineSpacing(3)
+        }
+        .appCard()
+    }
+
+    private var creditsCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Credits", systemImage: "sparkles")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(AppTheme.teal)
+            Text(loc.t("settings.about.credits"))
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(AppTheme.textSecondary)
+                .lineSpacing(3)
+        }
+        .appCard()
+    }
+
+    private var privacyCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(loc.t("settings.about.privacy"), systemImage: "lock.shield.fill")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(AppTheme.indigo)
+            Text(loc.t("settings.about.noTracking"))
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(AppTheme.textSecondary)
+                .lineSpacing(3)
+        }
+        .appCard()
+    }
+
+    private var disclaimerCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Disclaimer", systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(AppTheme.warning)
+            Text(loc.t("settings.about.disclaimer"))
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(AppTheme.textSecondary)
+                .lineSpacing(3)
+        }
+        .appCard()
+    }
+
+    private var linksCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let repoURL = URL(string: "https://github.com/Heng-zm/ai-dubbing1") {
+                Link(destination: repoURL) {
+                    HStack {
+                        Label(loc.t("settings.about.licenses"), systemImage: "chevron.left.forwardslash.chevron.right")
+                            .font(.system(size: 13.5, weight: .semibold))
+                            .foregroundStyle(AppTheme.textPrimary)
+                        Spacer()
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(AppTheme.textTertiary)
+                    }
+                }
+            }
+
+            DividerLine()
+
+            if let repoURL = URL(string: "https://github.com/Heng-zm/ai-dubbing1") {
+                Link(destination: repoURL) {
+                    HStack {
+                        Label(loc.t("settings.about.website"), systemImage: "questionmark.circle")
+                            .font(.system(size: 13.5, weight: .semibold))
+                            .foregroundStyle(AppTheme.textPrimary)
+                        Spacer()
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(AppTheme.textTertiary)
+                    }
+                }
+            }
+        }
+        .appCard()
+    }
+}

@@ -18,7 +18,7 @@ enum AudioSession {
 
     static func configureForPlayback() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .spokenAudio, options: [.mixWithOthers])
+        try? session.setCategory(.playback, mode: .spokenAudio, options: [.allowBluetoothA2DP, .mixWithOthers])
         try? session.setActive(true)
     }
 }
