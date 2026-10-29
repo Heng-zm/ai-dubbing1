@@ -1,5 +1,6 @@
 import AVKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct StudioView: View {
     @EnvironmentObject private var store: ProjectStore
@@ -86,6 +87,7 @@ struct StudioScreen: View {
     @State private var mediaError: String?
     @State private var isAddingMedia = false
     @State private var configured = false
+    @State private var showSRTImporter = false
 
     init(projectID: UUID, initialProject: DubProject) {
         self.projectID = projectID
@@ -97,22 +99,22 @@ struct StudioScreen: View {
             ScreenBackground()
                 .ignoresSafeArea()
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 14) {
                     statusHeader
                     mediaCard
                     if model.hasMedia {
-                        playbackControls
+                        timelineScrubberCard
                     }
                     if let mediaError {
                         InlineBanner(kind: .error, text: mediaError)
                     }
-                    actionRow
+                    capcutActionDock
                     tabPicker
                     tabContent
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-                .padding(.bottom, 32)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 36)
             }
         }
         .navigationTitle(model.project.title)
@@ -121,6 +123,11 @@ struct StudioScreen: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    Button {
+                        showSRTImporter = true
+                    } label: {
+                        Label(loc.t("srt.import"), systemImage: "captions.bubble")
+                    }
                     Button {
                         sheet = .media
                     } label: {
@@ -136,6 +143,19 @@ struct StudioScreen: View {
                         .font(.system(size: 17, weight: .semibold))
                 }
                 .accessibilityLabel(Text(loc.t("studio.moreActions")))
+            }
+        }
+        .fileImporter(
+            isPresented: $showSRTImporter,
+            allowedContentTypes: [.plainText, UTType(filenameExtension: "srt") ?? .plainText],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                model.importSRT(url: url)
+            case .failure(let error):
+                mediaError = ErrorPresenter.message(for: error, localization: loc)
             }
         }
         .sheet(item: $sheet) { destination in
@@ -204,43 +224,108 @@ struct StudioScreen: View {
         .padding(.horizontal, 2)
     }
 
+    // MARK: - CapCut Stage Viewport
     private var mediaCard: some View {
         Group {
             if let mediaURL = AppFiles.mediaURL(for: model.project) {
                 if model.project.hasVideo, let player = playback.player {
-                    VideoPlayer(player: player)
-                        .allowsHitTesting(false)
-                        .frame(height: 205)
-                        .background(Color.black)
-                        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                        .overlay(alignment: .bottomLeading) {
-                            HStack(spacing: 10) {
-                                Button {
-                                    playback.toggle()
-                                    Haptics.tap()
-                                } label: {
-                                    Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
-                                        .font(.system(size: 15, weight: .bold))
-                                        .foregroundStyle(.white)
-                                        .frame(width: 40, height: 40)
-                                        .background(Circle().fill(Color.black.opacity(0.48)))
-                                        .overlay(Circle().stroke(Color.white.opacity(0.25), lineWidth: 1))
+                    ZStack(alignment: .bottom) {
+                        VideoPlayer(player: player)
+                            .allowsHitTesting(false)
+                            .frame(height: 220)
+                            .background(Color.black)
+                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+                        // CapCut Top HUD Overlay
+                        VStack {
+                            HStack {
+                                HStack(spacing: 5) {
+                                    Circle()
+                                        .fill(playback.isPlaying ? AppTheme.teal : AppTheme.capcutNeonGold)
+                                        .frame(width: 6, height: 6)
+                                    Text(Formatters.preciseTimecode(playback.currentTime))
+                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    Text("/")
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundStyle(.white.opacity(0.55))
+                                    Text(Formatters.preciseTimecode(max(playback.duration, model.project.duration)))
+                                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(.white.opacity(0.75))
                                 }
-                                .buttonStyle(.plain)
-                                Text(Formatters.preciseTimecode(playback.currentTime))
-                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 5)
-                                    .background(Capsule().fill(Color.black.opacity(0.42)))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 5)
+                                .background(Capsule().fill(Color.black.opacity(0.65)))
+                                .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 1))
+
                                 Spacer()
+
+                                HStack(spacing: 4) {
+                                    Image(systemName: "bolt.fill")
+                                        .font(.system(size: 9, weight: .black))
+                                        .foregroundStyle(AppTheme.capcutCyan)
+                                    Text("1080P · 60FPS · GPU")
+                                        .font(.system(size: 9.5, weight: .black, design: .rounded))
+                                        .foregroundStyle(.white)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(Capsule().fill(Color.black.opacity(0.65)))
+                                .overlay(Capsule().stroke(AppTheme.capcutCyan.opacity(0.4), lineWidth: 1))
                             }
-                            .padding(12)
+                            .padding(10)
+                            Spacer()
                         }
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                        )
+
+                        // CapCut Center/Bottom Floating Playback Controls
+                        HStack(spacing: 20) {
+                            Button {
+                                playback.seek(to: max(0, playback.currentTime - 2.0))
+                                Haptics.tap()
+                            } label: {
+                                Image(systemName: "gobackward.2")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 34, height: 34)
+                                    .background(Circle().fill(Color.black.opacity(0.55)))
+                                    .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                playback.toggle()
+                                Haptics.tap()
+                            } label: {
+                                Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
+                                    .font(.system(size: 18, weight: .heavy))
+                                    .foregroundStyle(Color(hex: 0x0A0D14))
+                                    .frame(width: 48, height: 48)
+                                    .background(Circle().fill(AppTheme.capcutNeonGold))
+                                    .overlay(Circle().stroke(Color.white.opacity(0.3), lineWidth: 1.5))
+                                    .shadow(color: AppTheme.capcutNeonGold.opacity(0.45), radius: 8, x: 0, y: 0)
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                playback.seek(to: min(model.project.duration, playback.currentTime + 2.0))
+                                Haptics.tap()
+                            } label: {
+                                Image(systemName: "goforward.2")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 34, height: 34)
+                                    .background(Circle().fill(Color.black.opacity(0.55)))
+                                    .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.bottom, 14)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
                 } else {
                     audioTimelineCard(url: mediaURL)
                 }
@@ -252,8 +337,12 @@ struct StudioScreen: View {
 
     private func audioTimelineCard(url: URL) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(AppTheme.darkGradient)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(AppTheme.capcutPanel)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
             VStack(spacing: 14) {
                 HStack {
                     Label(
@@ -261,11 +350,14 @@ struct StudioScreen: View {
                         systemImage: "waveform"
                     )
                     .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(AppTheme.gold.opacity(0.85))
+                    .foregroundStyle(AppTheme.capcutNeonGold)
                     Spacer()
-                    Text(Formatters.timecode(model.project.duration))
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.5))
+                    Text("AUDIO · 60FPS · GPU")
+                        .font(.system(size: 9.5, weight: .black, design: .rounded))
+                        .foregroundStyle(AppTheme.capcutCyan)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.black.opacity(0.4)))
                 }
                 WaveformView(
                     values: model.project.waveform.isEmpty
@@ -274,29 +366,52 @@ struct StudioScreen: View {
                     progress: model.project.duration > 0
                         ? playback.currentTime / model.project.duration
                         : 0,
-                    tint: AppTheme.gold,
+                    tint: AppTheme.capcutNeonGold,
                     idleTint: .white.opacity(0.24)
                 )
                 .frame(height: 74)
-                HStack(spacing: 9) {
+                HStack(spacing: 12) {
+                    Button {
+                        playback.seek(to: max(0, playback.currentTime - 2.0))
+                        Haptics.tap()
+                    } label: {
+                        Image(systemName: "gobackward.2")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 32, height: 32)
+                            .background(Circle().fill(Color.black.opacity(0.55)))
+                    }
+                    .buttonStyle(.plain)
+
                     Button {
                         playback.toggle()
                         Haptics.tap()
                     } label: {
                         Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(Color(hex: 0x20180A))
-                            .frame(width: 36, height: 36)
-                            .background(Circle().fill(AppTheme.gold))
+                            .font(.system(size: 16, weight: .heavy))
+                            .foregroundStyle(Color(hex: 0x0A0D14))
+                            .frame(width: 42, height: 42)
+                            .background(Circle().fill(AppTheme.capcutNeonGold))
+                            .shadow(color: AppTheme.capcutNeonGold.opacity(0.4), radius: 6)
                     }
                     .buttonStyle(.plain)
-                    Text(Formatters.preciseTimecode(playback.currentTime))
-                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.65))
+
+                    Button {
+                        playback.seek(to: min(model.project.duration, playback.currentTime + 2.0))
+                        Haptics.tap()
+                    } label: {
+                        Image(systemName: "goforward.2")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 32, height: 32)
+                            .background(Circle().fill(Color.black.opacity(0.55)))
+                    }
+                    .buttonStyle(.plain)
+
                     Spacer()
-                    Text(loc.t("studio.originalAudio"))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.38))
+                    Text(Formatters.preciseTimecode(playback.currentTime) + " / " + Formatters.timecode(model.project.duration))
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.75))
                 }
             }
             .padding(16)
@@ -306,66 +421,169 @@ struct StudioScreen: View {
 
     private var noMediaCard: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(AppTheme.darkGradient)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(AppTheme.capcutPanel)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
             VStack(spacing: 12) {
                 Image(systemName: "film.stack")
                     .font(.system(size: 30, weight: .light))
-                    .foregroundStyle(AppTheme.gold.opacity(0.9))
+                    .foregroundStyle(AppTheme.capcutNeonGold)
                 Text(loc.t("studio.noMedia"))
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                 Text(loc.t("studio.noMedia.body"))
                     .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.52))
+                    .foregroundStyle(.white.opacity(0.55))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                Button {
-                    sheet = .media
-                } label: {
-                    Text(loc.t("studio.addMedia"))
+                HStack(spacing: 10) {
+                    Button {
+                        sheet = .media
+                    } label: {
+                        Text(loc.t("studio.addMedia"))
+                    }
+                    .buttonStyle(CompactButtonStyle(tint: AppTheme.capcutNeonGold))
+
+                    Button {
+                        showSRTImporter = true
+                    } label: {
+                        Label(loc.t("srt.import"), systemImage: "captions.bubble.fill")
+                    }
+                    .buttonStyle(CompactButtonStyle(tint: AppTheme.capcutCyan))
                 }
-                .buttonStyle(CompactButtonStyle(tint: AppTheme.gold))
-                .padding(.top, 2)
+                .padding(.top, 4)
             }
             .padding(20)
         }
     }
 
-    private var playbackControls: some View {
-        HStack(spacing: 12) {
-            Button {
-                playback.toggle()
-                Haptics.tap()
-            } label: {
-                Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Color(hex: 0x20180A))
-                    .frame(width: 36, height: 36)
-                    .background(Circle().fill(AppTheme.gold))
+    // MARK: - CapCut Multi-Track Timeline Scrubber
+    private var timelineScrubberCard: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 8) {
+                Text(Formatters.preciseTimecode(playback.currentTime))
+                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(AppTheme.capcutNeonGold)
+                    .frame(width: 48, alignment: .leading)
+
+                Slider(
+                    value: Binding(
+                        get: { playback.currentTime },
+                        set: { playback.seek(to: $0) }
+                    ),
+                    in: 0...max(playback.duration, model.project.duration, 0.01)
+                )
+                .tint(AppTheme.capcutNeonGold)
+
+                Text(Formatters.preciseTimecode(max(playback.duration, model.project.duration)))
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(AppTheme.textTertiary)
+                    .frame(width: 48, alignment: .trailing)
             }
-            .buttonStyle(.plain)
 
-            Text(Formatters.preciseTimecode(playback.currentTime))
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(AppTheme.textSecondary)
-                .frame(width: 44, alignment: .leading)
+            if !model.project.segments.isEmpty, model.project.duration > 0 {
+                GeometryReader { geo in
+                    let total = max(model.project.duration, playback.duration, 0.01)
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Color.white.opacity(0.08))
+                            .frame(height: 8)
 
-            Slider(
-                value: Binding(
-                    get: { playback.currentTime },
-                    set: { playback.seek(to: $0) }
-                ),
-                in: 0...max(playback.duration, 0.01)
-            )
-            .tint(AppTheme.gold)
+                        ForEach(model.project.segments) { segment in
+                            let left = (segment.start / total) * geo.size.width
+                            let width = max(4, ((segment.end - segment.start) / total) * geo.size.width)
+                            let isCurrent = playback.isPlaying && playback.currentTime >= segment.start && playback.currentTime <= segment.end
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .fill(isCurrent ? AppTheme.capcutNeonGold : (segment.isTranslated ? AppTheme.teal : AppTheme.indigo))
+                                .frame(width: min(width, geo.size.width - left), height: 8)
+                                .offset(x: left)
+                        }
 
-            Text(Formatters.preciseTimecode(max(playback.duration, model.project.duration)))
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(AppTheme.textTertiary)
-                .frame(width: 44, alignment: .trailing)
+                        let cursorX = (playback.currentTime / total) * geo.size.width
+                        Capsule()
+                            .fill(Color.white)
+                            .frame(width: 3, height: 14)
+                            .offset(x: max(0, min(cursorX, geo.size.width - 3)))
+                            .shadow(color: .white.opacity(0.9), radius: 3)
+                    }
+                }
+                .frame(height: 14)
+            }
         }
         .padding(.horizontal, 4)
+    }
+
+    // MARK: - CapCut Action Dock
+    private var capcutActionDock: some View {
+        HStack(spacing: 2) {
+            CapCutDockItem(
+                symbol: "scissors",
+                title: loc.t("segment.split"),
+                tint: AppTheme.capcutCyan
+            ) {
+                splitAtPlayhead()
+            }
+            CapCutDockItem(
+                symbol: "captions.bubble.fill",
+                title: "SRT",
+                tint: AppTheme.indigo
+            ) {
+                showSRTImporter = true
+            }
+            CapCutDockItem(
+                symbol: "character.book.closed.fill",
+                title: loc.t("studio.translate"),
+                tint: AppTheme.goldDeep
+            ) {
+                sheet = .translate
+            }
+            CapCutDockItem(
+                symbol: "waveform.circle.fill",
+                title: loc.t("studio.voice"),
+                tint: AppTheme.teal
+            ) {
+                withAnimation { tab = .voice }
+            }
+            CapCutDockItem(
+                symbol: "bolt.badge.clock.fill",
+                title: "60 FPS",
+                tint: AppTheme.capcutNeonGold
+            ) {
+                withAnimation { tab = .export }
+            }
+            CapCutDockItem(
+                symbol: "plus.circle.fill",
+                title: loc.t("common.add"),
+                tint: .white
+            ) {
+                addLine()
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(AppTheme.capcutPanel)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.35), radius: 10, y: 5)
+        )
+    }
+
+    private func splitAtPlayhead() {
+        let time = playback.currentTime
+        if let segment = model.project.segments.first(where: { time > $0.start + 0.3 && time < $0.end - 0.3 }) {
+            _ = model.splitSegment(id: segment.id)
+            Haptics.success()
+            toasts.show(loc.t("segment.split"))
+        } else {
+            addLine()
+        }
     }
 
     private var actionRow: some View {
@@ -508,6 +726,32 @@ private struct StudioActionButton: View {
                             .stroke(AppTheme.border, lineWidth: 1)
                     )
             )
+        }
+        .buttonStyle(PressableButtonStyle())
+    }
+}
+
+private struct CapCutDockItem: View {
+    let symbol: String
+    let title: String
+    let tint: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 5) {
+                Image(systemName: symbol)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(tint)
+                    .frame(height: 20)
+                Text(title)
+                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(AppTheme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
         }
         .buttonStyle(PressableButtonStyle())
     }

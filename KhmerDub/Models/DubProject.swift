@@ -196,9 +196,15 @@ struct DubProject: Identifiable, Codable, Hashable {
     var fitSpeech: Bool = true
     var normalizeVolume: Bool = false
     var includeSubtitles: Bool = true
+    var export60FPS: Bool? = true
     var isDemo: Bool = false
     var notes: String = ""
     var exports: [ExportRecord] = []
+
+    var is60FPS: Bool {
+        get { export60FPS ?? true }
+        set { export60FPS = newValue }
+    }
 
     var hasMedia: Bool { mediaFileName != nil }
     var translatedCount: Int { segments.filter(\.isTranslated).count }

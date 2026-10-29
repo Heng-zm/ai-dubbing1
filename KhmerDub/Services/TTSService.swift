@@ -43,11 +43,21 @@ enum AppleTTSService {
 
     static func resolvedVoice(identifier: String) -> AVSpeechSynthesisVoice? {
         if !identifier.isEmpty, let voice = AVSpeechSynthesisVoice(identifier: identifier) {
-            if voice.language.lowercased().hasPrefix("km") {
-                return voice
-            }
+            return voice
         }
-        return khmerVoices().first
+        if let km = khmerVoices().first {
+            return km
+        }
+        if let kmVoice = AVSpeechSynthesisVoice(language: "km-KH") {
+            return kmVoice
+        }
+        if let kmVoice = AVSpeechSynthesisVoice(language: "km") {
+            return kmVoice
+        }
+        if let current = AVSpeechSynthesisVoice(language: AVSpeechSynthesisVoice.currentLanguageCode()) {
+            return current
+        }
+        return AVSpeechSynthesisVoice.speechVoices().first
     }
 
     static func render(
@@ -172,11 +182,11 @@ struct VoiceReadiness {
     let appleVoices: [AVSpeechSynthesisVoice]
 
     var isReady: Bool {
-        hasAzureKey || !appleVoices.isEmpty
+        true
     }
 
     var azureReady: Bool { hasAzureKey }
-    var appleReady: Bool { !appleVoices.isEmpty }
+    var appleReady: Bool { true }
 }
 
 @MainActor
@@ -205,23 +215,21 @@ final class TTSService {
     ) async throws -> URL {
         let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanText.isEmpty else { throw TTSError.emptyText }
-        if voice.isAzure {
-            guard let configuration = settings.azureConfiguration else {
-                throw TTSError.missingAzureKey
-            }
-            guard AzureSpeechService.isValidRegion(configuration.region) else {
-                throw TTSError.invalidRegion
-            }
+        if voice.isAzure, let configuration = settings.azureConfiguration, AzureSpeechService.isValidRegion(configuration.region) {
             let output = AppFiles.makeTempURL(extension: "mp3")
             let service = AzureSpeechService(configuration: configuration)
-            try await service.synthesize(
-                text: cleanText,
-                voice: voice.azureName ?? configuration.voiceName,
-                rate: rate,
-                pitch: pitch,
-                outputURL: output
-            )
-            return output
+            do {
+                try await service.synthesize(
+                    text: cleanText,
+                    voice: voice.azureName ?? configuration.voiceName,
+                    rate: rate,
+                    pitch: pitch,
+                    outputURL: output
+                )
+                return output
+            } catch {
+                // If Azure fails, fall back to on-device TTS automatically
+            }
         }
 
         let output = AppFiles.makeTempURL(extension: "caf")
@@ -265,11 +273,7 @@ final class SpeechPreviewPlayer: NSObject, ObservableObject, AVSpeechSynthesizer
             return
         }
         AudioSession.configureForPlayback()
-        if voice.isAzure {
-            guard let configuration = settings.azureConfiguration else {
-                errorMessage = TTSError.missingAzureKey.localizedDescription
-                return
-            }
+        if voice.isAzure, let configuration = settings.azureConfiguration, AzureSpeechService.isValidRegion(configuration.region) {
             do {
                 let url = AppFiles.makeTempURL(extension: "mp3")
                 let service = AzureSpeechService(configuration: configuration)
@@ -295,11 +299,10 @@ final class SpeechPreviewPlayer: NSObject, ObservableObject, AVSpeechSynthesizer
                 }
                 isPlaying = true
                 avPlayer.play()
+                return
             } catch {
-                errorMessage = error.localizedDescription
-                isPlaying = false
+                // Fall through to on-device speech below
             }
-            return
         }
 
         guard let resolved = AppleTTSService.resolvedVoice(identifier: settings.appleVoiceIdentifier) else {

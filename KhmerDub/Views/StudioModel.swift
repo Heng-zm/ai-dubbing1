@@ -494,6 +494,40 @@ final class StudioModel: ObservableObject {
         }
     }
 
+    // MARK: - Subtitles (SRT)
+
+    @discardableResult
+    func importSRT(url: URL, replace: Bool = false) -> Int {
+        do {
+            let loadedSegments = try SubtitleImporter.load(
+                from: url,
+                defaultVoice: project.defaultVoice,
+                rate: project.voiceRate,
+                pitch: project.voicePitch,
+                speaker: localization?.t("segment.speakerPlaceholder") ?? "Speaker 1"
+            )
+            guard !loadedSegments.isEmpty else { return 0 }
+            if replace {
+                project.segments = loadedSegments
+            } else {
+                project.segments.append(contentsOf: loadedSegments)
+            }
+            project.segments.sort { $0.start < $1.start }
+            project.recalculateStage()
+            persistNow()
+            Haptics.success()
+            if let localization {
+                toasts?.show(localization.f("srt.importedCount", loadedSegments.count))
+            }
+            return loadedSegments.count
+        } catch {
+            if let localization {
+                toasts?.show(localization.t("srt.importFailed"))
+            }
+            return 0
+        }
+    }
+
     // MARK: - Export
 
     func startExport(format: ExportFormat, includeSubtitles: Bool) {
@@ -516,12 +550,21 @@ final class StudioModel: ObservableObject {
             exportError = localization.t("error.noTranslatedText")
             return
         }
+        var bgTaskID = UIBackgroundTaskIdentifier.invalid
+        bgTaskID = UIApplication.shared.beginBackgroundTask(withName: "KhmerDub.Export") {
+            UIApplication.shared.endBackgroundTask(bgTaskID)
+            bgTaskID = .invalid
+        }
         isExporting = true
         exportError = nil
         exportProgress = 0
         exportPhase = .voices
         lastExport = nil
         defer {
+            if bgTaskID != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTaskID)
+                bgTaskID = .invalid
+            }
             isExporting = false
             exportPhase = nil
             exportTask = nil

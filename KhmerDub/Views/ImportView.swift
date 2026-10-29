@@ -20,6 +20,7 @@ struct ImportView: View {
     @State private var isCreating = false
     @State private var errorMessage: String?
     @State private var showFileImporter = false
+    @State private var showSRTImporter = false
     @State private var didCreate = false
 
     var body: some View {
@@ -85,6 +86,19 @@ struct ImportView: View {
             case .success(let urls):
                 guard let url = urls.first else { return }
                 Task { await loadFile(url: url) }
+            case .failure(let error):
+                errorMessage = ErrorPresenter.message(for: error, localization: loc)
+            }
+        }
+        .fileImporter(
+            isPresented: $showSRTImporter,
+            allowedContentTypes: [.plainText, UTType(filenameExtension: "srt") ?? .plainText],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                loadSRT(url: url)
             case .failure(let error):
                 errorMessage = ErrorPresenter.message(for: error, localization: loc)
             }
@@ -182,6 +196,31 @@ struct ImportView: View {
                                 .font(.system(size: 24, weight: .medium))
                                 .foregroundStyle(AppTheme.tealDeep)
                             Text(loc.t("import.fromFiles"))
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundStyle(AppTheme.textPrimary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 112)
+                        .background(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(AppTheme.surface)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                        .stroke(AppTheme.border, lineWidth: 1)
+                                )
+                        )
+                    }
+                    .buttonStyle(PressableButtonStyle())
+
+                    Button {
+                        showSRTImporter = true
+                    } label: {
+                        VStack(spacing: 9) {
+                            Image(systemName: "captions.bubble.fill")
+                                .font(.system(size: 24, weight: .medium))
+                                .foregroundStyle(AppTheme.capcutCyan)
+                            Text(loc.t("srt.import"))
                                 .font(.system(size: 12, weight: .bold, design: .rounded))
                                 .foregroundStyle(AppTheme.textPrimary)
                                 .multilineTextAlignment(.center)
@@ -301,6 +340,41 @@ struct ImportView: View {
         mediaInfo = nil
         photoItem = nil
         errorMessage = nil
+    }
+
+    private func loadSRT(url: URL) {
+        do {
+            let segments = try SubtitleImporter.load(
+                from: url,
+                defaultVoice: initialVoice,
+                speaker: loc.t("segment.speakerPlaceholder")
+            )
+            guard !segments.isEmpty else {
+                errorMessage = loc.t("srt.importFailed")
+                return
+            }
+            let srtTitle = url.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "_", with: " ")
+            let maxDuration = segments.map(\.end).max() ?? 10.0
+            var project = DubProject(
+                title: srtTitle.isEmpty ? loc.t("demo.title") : srtTitle,
+                sourceLanguage: sourceLanguage
+            )
+            project.segments = segments
+            project.duration = maxDuration
+            project.mode = settings.defaultMode
+            project.style = settings.defaultStyle
+            project.fitSpeech = settings.defaultFitSpeech
+            project.defaultVoice = initialVoice
+            project.waveform = WaveformFallback.demo(count: 96)
+            project.recalculateStage()
+            store.upsert(project, immediate: true)
+            Haptics.success()
+            toasts.show(loc.f("srt.importedCount", segments.count))
+            onCreated(project.id)
+            dismiss()
+        } catch {
+            errorMessage = loc.t("srt.importFailed")
+        }
     }
 
     private func createProject() {

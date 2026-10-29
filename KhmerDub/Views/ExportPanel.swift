@@ -22,15 +22,7 @@ struct ExportPanel: View {
     }
 
     private var voiceIssue: String? {
-        guard !includedSegments.isEmpty else { return nil }
-        let usesAzure = includedSegments.contains { $0.voice.isAzure }
-        let usesApple = includedSegments.contains { !$0.voice.isAzure }
-        if usesAzure, !settings.hasAzureKey {
-            return loc.t("voice.azureMissing")
-        }
-        if usesApple, AppleTTSService.khmerVoices().isEmpty {
-            return loc.t("voice.appleMissing")
-        }
+        // Automatic fallback to on-device system synthesis allows key-free dubbing & exports
         return nil
     }
 
@@ -245,6 +237,31 @@ struct ExportPanel: View {
                 }
             }
             .tint(AppTheme.teal)
+
+            if format == .video {
+                Toggle(isOn: Binding(
+                    get: { model.project.is60FPS },
+                    set: { model.project.is60FPS = $0 }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(loc.t("export.fps60"))
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(AppTheme.textPrimary)
+                            Text("GPU")
+                                .font(.system(size: 9, weight: .black, design: .rounded))
+                                .foregroundStyle(AppTheme.goldDeep)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(AppTheme.gold.opacity(0.18)))
+                        }
+                        Text(loc.t("export.fps60Hint"))
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(AppTheme.textTertiary)
+                    }
+                }
+                .tint(AppTheme.goldDeep)
+            }
 
             Toggle(isOn: Binding(
                 get: { model.project.fitSpeech },

@@ -23,6 +23,13 @@ enum AppTheme {
     static let success = Color(hex: 0x32B67A)
     static let warning = Color(hex: 0xF0A23E)
 
+    // CapCut Video Editor Palette
+    static let capcutDark = Color(hex: 0x0A0D14)
+    static let capcutPanel = Color(hex: 0x121722)
+    static let capcutCard = Color(hex: 0x1A202E)
+    static let capcutCyan = Color(hex: 0x00E5FF)
+    static let capcutNeonGold = Color(hex: 0xFFC837)
+
     static let heroGradient = LinearGradient(
         colors: [Color(hex: 0x13231F), Color(hex: 0x1D3B36), Color(hex: 0x2A2415)],
         startPoint: .topLeading,

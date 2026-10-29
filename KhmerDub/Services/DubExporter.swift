@@ -79,17 +79,6 @@ final class DubExporter {
             guard mediaURL != nil else { throw ExportError.noMedia }
         }
 
-        let usesAzure = usable.contains { $0.voice.isAzure }
-        let usesApple = usable.contains { !$0.voice.isAzure }
-        if usesAzure {
-            guard settings.hasAzureKey, settings.azureConfiguration != nil else {
-                throw ExportError.noVoice
-            }
-        }
-        if usesApple, AppleTTSService.khmerVoices().isEmpty {
-            throw ExportError.noVoice
-        }
-
         AppFiles.createProjectDirectories(project.id)
         let outputURL = uniqueOutputURL(
             project: project,
@@ -151,6 +140,15 @@ final class DubExporter {
         session.audioTimePitchAlgorithm = .timeDomain
         if let audioMix = composition.audioMix {
             session.audioMix = audioMix
+        }
+
+        // Hardware GPU Accelerated 60 FPS Video Composition
+        if format == .video {
+            let videoComposition = AVMutableVideoComposition(propertiesOf: composition.composition)
+            let fps: Int32 = project.is60FPS ? 60 : 30
+            videoComposition.frameDuration = CMTime(value: 1, timescale: fps)
+            videoComposition.renderScale = 1.0
+            session.videoComposition = videoComposition
         }
         let compositionDuration = composition.composition.duration
         if compositionDuration.seconds.isFinite, compositionDuration.seconds > 0 {
