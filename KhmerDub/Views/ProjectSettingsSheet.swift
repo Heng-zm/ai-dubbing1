@@ -52,7 +52,7 @@ struct ProjectSettingsSheet: View {
                     .padding(.bottom, 32)
                 }
             }
-            .navigationBarHidden(true)
+            .toolbar(.hidden, for: .navigationBar)
         }
         .onAppear(perform: load)
     }

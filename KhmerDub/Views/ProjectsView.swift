@@ -77,7 +77,7 @@ struct ProjectsView: View {
                     .padding(.bottom, 28)
                 }
             }
-            .navigationBarHidden(true)
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: UUID.self) { id in
                 StudioView(projectID: id)
             }

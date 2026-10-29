@@ -66,7 +66,7 @@ struct TranslateSheet: View {
                     .padding(.bottom, 32)
                 }
             }
-            .navigationBarHidden(true)
+            .toolbar(.hidden, for: .navigationBar)
         }
         .onAppear {
             model.clearTranslationError()

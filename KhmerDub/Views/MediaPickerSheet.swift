@@ -53,7 +53,7 @@ struct MediaPickerSheet: View {
                     LoadingOverlay(text: loc.t("import.analyzing"))
                 }
             }
-            .navigationBarHidden(true)
+            .toolbar(.hidden, for: .navigationBar)
         }
         .fileImporter(
             isPresented: $showFileImporter,

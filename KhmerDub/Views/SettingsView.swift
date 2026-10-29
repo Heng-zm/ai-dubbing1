@@ -26,7 +26,7 @@ struct SettingsView: View {
                     .padding(.bottom, 30)
                 }
             }
-            .navigationBarHidden(true)
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 

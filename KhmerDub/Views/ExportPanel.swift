@@ -324,13 +324,16 @@ struct ExportPanel: View {
                 if model.isExporting {
                     ProgressView()
                         .tint(Color(hex: 0x1A160D))
+                    Text(loc.t("export.working"))
+                } else {
+                    Image(systemName: format == .video ? "film" : "waveform")
+                    Text(loc.t("export.start"))
                 }
-                Text(loc.t("export.start"))
             }
         }
         .buttonStyle(PrimaryButtonStyle())
-        .disabled(!canExport)
-        .opacity(canExport ? 1 : 0.55)
+        .disabled(!canExport || model.isExporting)
+        .opacity(canExport && !model.isExporting ? 1 : 0.55)
     }
 
     private func resultCard(_ result: DubExportResult) -> some View {

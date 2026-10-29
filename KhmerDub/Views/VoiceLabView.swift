@@ -61,7 +61,7 @@ struct VoiceLabView: View {
                     .padding(.bottom, 30)
                 }
             }
-            .navigationBarHidden(true)
+            .toolbar(.hidden, for: .navigationBar)
         }
         .onAppear {
             appleVoices = AppleTTSService.khmerVoices()

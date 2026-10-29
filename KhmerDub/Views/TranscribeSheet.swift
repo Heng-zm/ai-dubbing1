@@ -74,7 +74,7 @@ struct TranscribeSheet: View {
                     .padding(.bottom, 32)
                 }
             }
-            .navigationBarHidden(true)
+            .toolbar(.hidden, for: .navigationBar)
         }
         .onAppear {
             language = model.project.sourceLanguage
